@@ -63,6 +63,7 @@ namespace XUnity.AutoTranslator.Plugin.Core
       internal TranslationAggregatorWindow TranslationAggregatorWindow;
       internal TranslationAggregatorOptionsWindow TranslationAggregatorOptionsWindow;
       internal TranslationManager TranslationManager;
+      internal DiscordController DiscordController;
       internal TextTranslationCache TextCache;
       internal Dictionary<string, TextTranslationCache> PluginTextCaches = new Dictionary<string, TextTranslationCache>( StringComparer.OrdinalIgnoreCase );
       internal TextureTranslationCache TextureCache;
@@ -70,7 +71,7 @@ namespace XUnity.AutoTranslator.Plugin.Core
       internal SpamChecker SpamChecker;
       internal static RegexOptions RegexCompiledSupportedFlag = RegexOptions.None;
       private Dictionary<string, UntranslatedText> CachedKeys = new Dictionary<string, UntranslatedText>( StringComparer.Ordinal );
-
+      internal Type BattleManager;
       private List<Action<ComponentTranslationContext>> _shouldIgnore = new List<Action<ComponentTranslationContext>>();
 
       /// <summary>
@@ -87,7 +88,7 @@ namespace XUnity.AutoTranslator.Plugin.Core
 
       private bool _isInTranslatedMode = true;
       private bool _textHooksEnabled = true;
-
+      private bool _isInMenu = true;
       private float _batchOperationSecondCounter = 0;
 
       private bool _hasValidOverrideFont = false;
@@ -156,13 +157,24 @@ namespace XUnity.AutoTranslator.Plugin.Core
 
          // enable scene scan
          EnableSceneLoadScan();
-
+         
          // load fallback fonts
          LoadFallbackFont();
 
          // load all translations from files
          LoadTranslations( false );
 
+         // setup Discord Game Presence
+         DiscordController = new DiscordController();
+
+         var assemblyCsharp = AppDomain.CurrentDomain
+            .GetAssemblies()
+            .First( ( a ) => { return a.IsAssemblyCsharp(); } );
+
+         BattleManager = assemblyCsharp.GetType( "BlackJack.ProjectU.Battle.BattleManager" );
+         
+         // BlackJack.ConfigData.BattleType
+         // BlackJack.ProjectU.Battle.BattleManager
          XuaLogger.AutoTranslator.Info( $"Loaded XUnity.AutoTranslator into Unity [{Application.unityVersion}] game." );
       }
 
@@ -557,6 +569,27 @@ namespace XUnity.AutoTranslator.Plugin.Core
 
       private void OnLevelWasLoaded( int id )
       {
+         var activeScene = SceneManager.GetActiveScene().name;
+         if( activeScene != "GameEntry" && !activeScene.StartsWith("Camp_") && !activeScene.StartsWith( "WorldMap_" ))
+         {
+            _isInMenu = false;
+            DiscordController.ChangeState( ActivityState.InBattle );
+            //var method = BattleManager.GetMethod( "get_Instance", BindingFlags.Public | BindingFlags.Static | BindingFlags.FlattenHierarchy );
+            //object result = method.Invoke( null, null );
+            //var m_battleLoader = BattleManager.GetField( "m_battleLoader", BindingFlags.NonPublic | BindingFlags.Instance );
+            //var battleLoader = m_battleLoader?.GetValue(result);
+            //var m_battleBase = battleLoader?.GetType()?.GetField("m_battleBase", BindingFlags.NonPublic | BindingFlags.Instance);
+            //var battleBase = m_battleBase?.GetValue( battleLoader );
+            //var m_battleType = battleBase?.GetType()?.GetField( "m_battleType", BindingFlags.NonPublic | BindingFlags.Instance );
+            //var battleType = m_battleType?.GetValue( battleBase );
+            //XuaLogger.Common.Info( $"Loaded [{battleType}]." );
+         }
+         else if( !_isInMenu )
+         {
+            _isInMenu = true;
+            DiscordController.ChangeState( ActivityState.InMenu );
+         }
+         
          if( !UnityFeatures.SupportsSceneManager || ( UnityFeatures.SupportsSceneManager && _isCalledFromSceneManager ) )
          {
             if( Settings.EnableTextureScanOnSceneLoad && ( Settings.EnableTextureDumping || Settings.EnableTextureTranslation ) )
@@ -2821,6 +2854,7 @@ namespace XUnity.AutoTranslator.Plugin.Core
 
       public void Update()
       {
+         DiscordController.Update();
          try
          {
             var frameCount = Time.frameCount;
@@ -3612,6 +3646,7 @@ namespace XUnity.AutoTranslator.Plugin.Core
 
       void OnDestroy()
       {
+         DiscordController.Dispose();
          try
          {
             RedirectedDirectory.Uninitialize();
